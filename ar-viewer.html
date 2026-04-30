@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AR Viewer</title>
+  <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.4.0/model-viewer.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0a0a0a;
+      --surface: #111111;
+      --accent: #c8ff00;
+      --accent2: #ff6b35;
+      --text: #f0f0f0;
+      --muted: #555;
+      --border: #1e1e1e;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Syne', sans-serif;
+      overflow: hidden;
+    }
+
+    /* Background grain */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* Ambient glow */
+    body::after {
+      content: '';
+      position: fixed;
+      top: -30%;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 60vw;
+      height: 60vw;
+      background: radial-gradient(circle, rgba(200,255,0,0.04) 0%, transparent 70%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .wrapper {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      padding: 1.5rem;
+      gap: 0;
+    }
+
+    /* Top bar */
+    .topbar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1rem 1.5rem;
+      z-index: 10;
+      background: linear-gradient(to bottom, rgba(10,10,10,0.9) 0%, transparent 100%);
+    }
+
+    .brand {
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.25em;
+      text-transform: uppercase;
+      color: var(--accent);
+      opacity: 0.8;
+    }
+
+    .badge {
+      font-size: 0.6rem;
+      font-weight: 700;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--muted);
+      border: 1px solid var(--border);
+      padding: 0.25rem 0.6rem;
+      border-radius: 2rem;
+    }
+
+    /* Model viewer */
+    model-viewer {
+      width: 100vw;
+      height: 100vh;
+      position: fixed;
+      top: 0;
+      left: 0;
+      --poster-color: transparent;
+      background: transparent;
+    }
+
+    /* AR button override */
+    model-viewer::part(default-ar-button) {
+      display: none;
+    }
+
+    /* Bottom panel */
+    .bottom-panel {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      padding: 1.5rem;
+      background: linear-gradient(to top, rgba(10,10,10,0.95) 60%, transparent 100%);
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      z-index: 10;
+    }
+
+    .model-info {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+    }
+
+    .model-name {
+      font-size: 1.4rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      line-height: 1;
+    }
+
+    .model-name span {
+      display: block;
+      font-size: 0.65rem;
+      font-weight: 400;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 0.3rem;
+    }
+
+    .hint {
+      font-size: 0.6rem;
+      letter-spacing: 0.1em;
+      color: var(--muted);
+      text-transform: uppercase;
+      text-align: right;
+      line-height: 1.5;
+    }
+
+    /* AR Button */
+    .ar-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.6rem;
+      background: var(--accent);
+      color: #000;
+      border: none;
+      border-radius: 0.75rem;
+      padding: 1rem 1.5rem;
+      font-family: 'Syne', sans-serif;
+      font-size: 0.9rem;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      cursor: pointer;
+      width: 100%;
+      transition: transform 0.15s ease, background 0.2s ease;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .ar-btn::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: rgba(255,255,255,0.15);
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+
+    .ar-btn:active::before { opacity: 1; }
+    .ar-btn:active { transform: scale(0.98); }
+
+    .ar-btn svg {
+      width: 1.1rem;
+      height: 1.1rem;
+      flex-shrink: 0;
+    }
+
+    /* Unsupported fallback */
+    .ar-btn.unsupported {
+      background: var(--surface);
+      color: var(--muted);
+      cursor: default;
+      border: 1px solid var(--border);
+    }
+
+    /* Loading state */
+    .loading-overlay {
+      position: fixed;
+      inset: 0;
+      background: var(--bg);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 1.5rem;
+      z-index: 100;
+      transition: opacity 0.6s ease;
+    }
+
+    .loading-overlay.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .loader-ring {
+      width: 3rem;
+      height: 3rem;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .loading-text {
+      font-size: 0.65rem;
+      letter-spacing: 0.25em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    /* Progress bar */
+    .progress-bar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      height: 2px;
+      background: var(--accent);
+      transition: width 0.3s ease;
+      z-index: 200;
+    }
+
+    /* Pulse animation for AR button */
+    @keyframes pulse-ring {
+      0% { box-shadow: 0 0 0 0 rgba(200,255,0,0.4); }
+      70% { box-shadow: 0 0 0 12px rgba(200,255,0,0); }
+      100% { box-shadow: 0 0 0 0 rgba(200,255,0,0); }
+    }
+
+    .ar-btn.ready {
+      animation: pulse-ring 2s ease-out infinite;
+    }
+
+    /* Fade in animation */
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(1rem); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .bottom-panel {
+      animation: fadeUp 0.5s ease 0.3s both;
+    }
+
+    .topbar {
+      animation: fadeUp 0.4s ease 0.1s both;
+    }
+
+    /* ---- PLACEHOLDER notice ---- */
+    .placeholder-notice {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      text-align: center;
+      z-index: 5;
+      pointer-events: none;
+      opacity: 0.15;
+    }
+
+    .placeholder-notice p {
+      font-size: 0.65rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--text);
+      margin-top: 0.5rem;
+    }
+
+    .placeholder-notice svg {
+      width: 3rem;
+      height: 3rem;
+      color: var(--accent);
+      margin: 0 auto;
+      display: block;
+    }
+  </style>
+</head>
+<body>
+
+<!-- Loading overlay -->
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="loader-ring"></div>
+  <p class="loading-text">Se încarcă modelul…</p>
+</div>
+<div class="progress-bar" id="progressBar" style="width:0%"></div>
+
+<!-- Top bar -->
+<div class="topbar">
+  <div class="brand">AR Viewer</div>
+  <div class="badge">3D · WebAR</div>
+</div>
+
+<!-- 3D Model Viewer -->
+<!--
+  ╔══════════════════════════════════════════════════════╗
+  ║  INSTRUCȚIUNI:                                       ║
+  ║  Înlocuiește URL-ul de mai jos cu link-ul tău .glb   ║
+  ║  Exemplu: src="https://exemplu.com/model.glb"        ║
+  ╚══════════════════════════════════════════════════════╝
+-->
+<model-viewer
+  id="modelViewer"
+  src="INLOCUIESTE_CU_URL_GLB"
+  alt="Model 3D AR"
+  ar
+  ar-modes="webxr scene-viewer quick-look"
+  camera-controls
+  auto-rotate
+  auto-rotate-delay="0"
+  rotation-per-second="20deg"
+  shadow-intensity="1.2"
+  shadow-softness="0.8"
+  environment-image="neutral"
+  exposure="1"
+  tone-mapping="commerce"
+  loading="eager"
+>
+</model-viewer>
+
+<!-- Placeholder icon (se vede dacă modelul nu e setat) -->
+<div class="placeholder-notice" id="placeholderNotice">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+    <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+    <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+    <line x1="12" y1="22.08" x2="12" y2="12"/>
+  </svg>
+  <p>model 3D</p>
+</div>
+
+<!-- Bottom panel -->
+<div class="bottom-panel">
+  <div class="model-info">
+    <div class="model-name">
+      <span>Experiență</span>
+      <!-- Schimbă numele modelului tău aici -->
+      Burger 3D
+    </div>
+    <div class="hint">
+      Trage pentru a<br>roti modelul
+    </div>
+  </div>
+
+  <button class="ar-btn" id="arBtn" onclick="launchAR()">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3 7V5a2 2 0 0 1 2-2h2"/>
+      <path d="M17 3h2a2 2 0 0 1 2 2v2"/>
+      <path d="M21 17v2a2 2 0 0 1-2 2h-2"/>
+      <path d="M7 21H5a2 2 0 0 1-2-2v-2"/>
+      <rect x="7" y="7" width="10" height="10" rx="1"/>
+    </svg>
+    Deschide în AR
+  </button>
+</div>
+
+<script>
+  const viewer = document.getElementById('modelViewer');
+  const overlay = document.getElementById('loadingOverlay');
+  const progressBar = document.getElementById('progressBar');
+  const arBtn = document.getElementById('arBtn');
+  const placeholder = document.getElementById('placeholderNotice');
+
+  // Check if model src is placeholder
+  const modelSrc = viewer.getAttribute('src');
+  if (modelSrc === 'INLOCUIESTE_CU_URL_GLB') {
+    placeholder.style.opacity = '0.2';
+    overlay.classList.add('hidden');
+  }
+
+  // Loading progress
+  viewer.addEventListener('progress', (e) => {
+    const pct = Math.round(e.detail.totalProgress * 100);
+    progressBar.style.width = pct + '%';
+  });
+
+  // Model loaded
+  viewer.addEventListener('load', () => {
+    overlay.classList.add('hidden');
+    progressBar.style.width = '100%';
+    setTimeout(() => { progressBar.style.opacity = '0'; }, 500);
+    placeholder.style.display = 'none';
+    arBtn.classList.add('ready');
+  });
+
+  // AR support check
+  viewer.addEventListener('ar-status', (e) => {
+    if (e.detail.status === 'not-presenting') {
+      arBtn.classList.add('ready');
+    }
+  });
+
+  // Check AR support on load
+  window.addEventListener('load', () => {
+    if (!viewer.canActivateAR) {
+      // Fallback: still allow click, model-viewer handles messaging
+    }
+  });
+
+  // Launch AR
+  function launchAR() {
+    if (modelSrc === 'INLOCUIESTE_CU_URL_GLB') {
+      alert('⚠️ Înlocuiește src="INLOCUIESTE_CU_URL_GLB" cu URL-ul real al fișierului .glb în codul HTML.');
+      return;
+    }
+    viewer.activateAR();
+  }
+
+  // Handle AR errors gracefully
+  viewer.addEventListener('ar-status', (e) => {
+    if (e.detail.status === 'failed') {
+      arBtn.classList.remove('ready');
+      arBtn.textContent = 'AR indisponibil pe acest device';
+      arBtn.classList.add('unsupported');
+    }
+  });
+</script>
+
+</body>
+</html>
